@@ -79,7 +79,6 @@
 
         #videos {
             font-size: 0;
-            /* to fix whitespace/scrollbars problem */
             height: 100%;
             pointer-events: none;
             position: absolute;
@@ -110,26 +109,21 @@
             max-height: 100%;
             max-width: 100%;
             object-fit: cover;
-            /* no letterboxing */
-            -moz-transform: scale(-1, 1);
-            -ms-transform: scale(-1, 1);
-            -o-transform: scale(-1, 1);
-            -webkit-transform: scale(-1, 1);
-            transform: scale(-1, 1);
             transition: opacity 1s;
             width: 100%;
+            transform: scale(-1, 1);
         }
 
         #mini-video {
             border: 1px solid gray;
             bottom: 20px;
             left: 20px;
-            /* video div is flipped horizontally when active*/
             max-height: 17%;
             max-width: 17%;
             opacity: 0;
             position: absolute;
             transition: opacity 1s;
+            transform: scale(-1, 1);
         }
 
         #mini-video.active {
@@ -137,20 +131,15 @@
             z-index: 2;
         }
 
+        /* transform: scale(-1, 1);  mirrors */
         #remote-video {
             display: block;
             height: 100%;
             max-height: 100%;
             max-width: 100%;
             object-fit: cover;
-            /* no letterboxing */
             opacity: 0;
             position: absolute;
-            -moz-transform: rotateY(180deg);
-            -ms-transform: rotateY(180deg);
-            -o-transform: rotateY(180deg);
-            -webkit-transform: rotateY(180deg);
-            transform: rotateY(180deg);
             transition: opacity 1s;
             width: 100%;
         }
@@ -281,8 +270,8 @@
 
 <body>
     <div id="videos">
-        <video id="mini-video" autoplay="" playsinline="" muted="" class=""></video>
-        <video id="remote-video" autoplay="" playsinline="" class=""></video>
+        <video id="mini-video" controls autoplay="" playsinline="" muted="" class=""></video>
+        <video id="remote-video" controls autoplay="" playsinline="" class=""></video>
         <video id="local-video" autoplay="" playsinline="" muted="" class="active"></video>
     </div>
     <div id="icons" class="active">
@@ -353,11 +342,12 @@
             localStream.getAudioTracks()[0].enabled = !(localStream.getAudioTracks()[0].enabled);
             muteAudio.classList.toggle('on');
         }
+        fullscreen.onclick = e => screenshare();
 
         let localPeerConnection;
-        let remotePeerConnection;
         let localStream;
         let answer;
+        let isSharing;
         let inboundDataChannel;
         let outboundDataChannel;
         const localICE = [];
@@ -365,6 +355,9 @@
         const offerOptions = {
             offerToReceiveAudio: 1,
             offerToReceiveVideo: 1
+        };
+        const screenshareConstraints = {
+            video: true
         };
 
         async function getUserMedia() {
@@ -376,8 +369,9 @@
         }
 
         function gotRemoteStream(e) {
-            if (remoteVideo.srcObject !== e.streams[0]) {
-                remoteVideo.srcObject = e.streams[0];
+            remoteStream = e.streams[0];
+            if (remoteVideo.srcObject !== remoteStream) {
+                remoteVideo.srcObject = remoteStream;
                 console.log('Received remote stream');
             }
         }
@@ -390,8 +384,8 @@
             inboundDataChannel.onclose = console.log("CHANNEL CLOSE");
         }
 
-        function onConnectionStateChange(event){
-            switch(localPeerConnection.connectionState) {
+        function onConnectionStateChange(event) {
+            switch (localPeerConnection.connectionState) {
                 case "connected":
                     remoteVideo.classList.add('active');
                     miniVideo.classList.add('active');
@@ -399,23 +393,23 @@
                     localVideo.srcObject = null;
                     miniVideo.srcObject = localStream;
                     hangup.classList.remove('hidden');
-                
-                break;
+
+                    break;
                 case "disconnected":
                 case "failed":
                     console.log("TERMINATED Unexpectedly")
-                break;
+                    break;
                 case "closed":
                     console.log("CHANNEL CLOSED")
-                break;
+                    break;
             }
         }
 
-        async function addRecievedIce (iceList) {
+        async function addreceivedIce(iceList) {
             for (const ice of iceList) {
                 await localPeerConnection.addIceCandidate(ice);
             }
-            console.log("RECIEVED ICE CANDIDATES SET");
+            console.log("receiVED ICE CANDIDATES SET");
         }
 
         async function checkforoffer() {
@@ -432,7 +426,7 @@
             answer = await localPeerConnection.createAnswer();
             await localPeerConnection.setLocalDescription(answer);
             console.log("ANSWER CREATED");
-            await addRecievedIce(offerResponse.ice)
+            await addreceivedIce(offerResponse.ice)
             console.log("REMOTE CONNECTION ADDED");
         }
 
@@ -468,7 +462,6 @@
             localPeerConnection.ontrack = gotRemoteStream;
             localPeerConnection.ondatachannel = receiveChannelCallback;
             localPeerConnection.onconnectionstatechange = onConnectionStateChange;
-
             localStream.getTracks()
                 .forEach(track => localPeerConnection.addTrack(track, localStream));
             console.log('Adding Local Stream to peer connection');
@@ -485,10 +478,30 @@
             localPeerConnection.close();
             localPeerConnection = null;
         }
-        
-        
-        
-        
+
+        async function screenshare() {
+            const sender = localPeerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (!sender) return;
+            if (isSharing) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                sender.replaceTrack(stream.getVideoTracks()[0]);
+                localStream = stream;
+                remoteVideo.srcObject = remoteStream;
+                miniVideo.srcObject = localStream;
+                fullscreen.classList.remove('on');
+                isSharing = false;
+            } else {
+                const stream = await navigator.mediaDevices.getDisplayMedia(screenshareConstraints);
+                sender.replaceTrack(stream.getVideoTracks()[0]);
+                localStream = stream;
+                localStream.onended = e => screenshare();
+                remoteVideo.srcObject = localStream;
+                miniVideo.srcObject = remoteStream;
+                fullscreen.classList.add('on');
+                isSharing = true;
+            }
+        }
+
         checkforoffer()
 
 
